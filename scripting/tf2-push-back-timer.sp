@@ -1,20 +1,29 @@
 #include <sourcemod>
 #include <sdktools>
+#include <sdkhooks>
 #include <tf2>
 
 
 public Plugin myinfo =
 {
-	name = "5CP Push back timer",
+	name = "TF2 5CP Push back timer",
 	author = "Nimble",
 	description = "Switches attacking team control point to defending (5CP only) when round timer runs out instead of stalemating",
 	version = "0.1",
 	url = "https://github.com/nimble0/tf2-push-back-timer"
 };
 
+int is5Cp = -1;
 Handle roundTimeLimitCvar = INVALID_HANDLE;
-int roundTimerEntity = -1;
-int controlPoints[] = {-1, -1, -1, -1, -1};
+int roundTimerEntity = INVALID_ENT_REFERENCE;
+int controlPoints[] =
+{
+	INVALID_ENT_REFERENCE,
+	INVALID_ENT_REFERENCE,
+	INVALID_ENT_REFERENCE,
+	INVALID_ENT_REFERENCE,
+	INVALID_ENT_REFERENCE
+};
 
 
 public void OnPluginStart()
@@ -26,49 +35,38 @@ public void OnPluginStart()
 		FCVAR_NOTIFY|FCVAR_REPLICATED,
 		true,
 		1.0);
-	HookConVarChange(roundTimeLimitCvar, RoundTimeLimitChanged);
-	
-	HookEvent("teamplay_round_start", RoundStarted, EventHookMode_Pre);
-	HookEntityOutput("team_round_timer", "OnFinished", Event_RoundTimerExpired);
+	HookConVarChange(roundTimeLimitCvar, OnRoundTimeLimitChanged);
+
+	HookEntityOutput("team_round_timer", "OnFinished", OnRoundTimerExpired);
 }
 
-public SetRoundTimeLimit()
-{
-	SetVariantInt(GetConVarInt(roundTimeLimitCvar));
-	AcceptEntityInput(roundTimerEntity, "SetMaxTime");
-}
-
-public RoundTimeLimitChanged(Handle cvar, const char[] oldValue, const char[] newValue)
+public OnRoundTimeLimitChanged(Handle cvar, const char[] oldValue, const char[] newValue)
 {
 	SetRoundTimeLimit();
 }
 
-public RoundStarted(Event event, const char[] name, bool dontBroadcast)
-{
-	SetRoundTimeLimit();
-}
 
 public void OnMapStart()
 {
-	// Check game type is CP
-	if(GameRules_GetProp("m_nGameType") == 2)
+	// Reset map specific data
+	is5Cp = -1;
+	roundTimerEntity = INVALID_ENT_REFERENCE;
+	for(int i = 0; i < sizeof(controlPoints); ++i)
+		controlPoints[i] = INVALID_ENT_REFERENCE;
+
+	if(Is5Cp())
 	{
-		int entity = -1;
-		
-		while((entity = FindEntityByClassname(entity, "team_round_timer")) != -1)
-		{
-			decl String:name[50];
-			GetEntPropString(entity, Prop_Data, "m_iName", name, sizeof(name));
-			
+		int entity = INVALID_ENT_REFERENCE;
+
+		while((entity = FindEntityByClassname(entity, "team_round_timer")) != INVALID_ENT_REFERENCE)
 			if(GetEntProp(entity, Prop_Send, "m_bShowInHUD")
-			&& !GetEntProp(entity, Prop_Send, "m_bStopWatchTimer")
-			&& StrEqual(name, "game_timer"))
-				roundTimerEntity = entity;
-		}
-	
+			&& !GetEntProp(entity, Prop_Send, "m_bStopWatchTimer"))
+				roundTimerEntity = EntIndexToEntRef(entity);
+
 		SetRoundTimeLimit();
-		
-		while((entity = FindEntityByClassname(entity, "team_control_point")) != -1)
+
+
+		while((entity = FindEntityByClassname(entity, "team_control_point")) != INVALID_ENT_REFERENCE)
 		{
 			// m_iPointIndex seems to follow the pattern:
 			// 0 - BLU last
@@ -84,24 +82,119 @@ public void OnMapStart()
 	}
 }
 
-public Action Event_RoundTimerExpired(const char[] output, int caller, int activator, float delay)
+public bool Is5Cp()
 {
-	if(caller == roundTimerEntity)
+	if(is5Cp == -1)
+		is5Cp = Is5Cp_();
+
+	if(is5Cp == 0)
+		return false;
+	else
+		return true;
+}
+
+public bool Is5Cp_()
+{
+	if(GameRules_GetProp("m_nGameType") != 2
+	|| GameRules_GetProp("m_bIsInTraining")
+	|| GameRules_GetProp("m_bIsInItemTestingMode")
+	|| GameRules_GetProp("m_bPlayingSpecialDeliveryMode")
+	|| GameRules_GetProp("m_bPlayingMannVsMachine")
+	|| GameRules_GetProp("m_bPlayingKoth"))
+		return false;
+
+	int roundCp = -1;
+	int roundCount = 0;
+	while((roundCp = FindEntityByClassname(roundCp, "team_control_point_round")) != -1)
+		++roundCount;
+
+	if(roundCount != 0)
+		return false;
+
+	int masterCp = FindEntityByClassname(-1, "team_control_point_master");
+
+	if(masterCp == -1)
+		return false;
+
+	if(GetEntProp(masterCp, Prop_Data, "m_iInvalidCapWinner") > 1)
+		return false;
+
+	return true;
+}
+
+
+public void OnEntityCreated(int entity, const char[] className)
+{
+	if(StrEqual(className, "team_control_point"))
+		SDKHook(entity, SDKHook_SpawnPost, OnCpSpawned);
+	else if(StrEqual(className, "team_round_timer"))
+		SDKHook(entity, SDKHook_SpawnPost, OnRoundTimerSpawned);
+}
+
+public void OnCpSpawned(int entity)
+{
+	// m_iPointIndex may be wrong if we read it here
+	CreateTimer(0.0, OnCpSpawned_, entity);
+}
+
+public Action OnCpSpawned_(Handle timer, int entity)
+{
+	int cpIndex = GetEntProp(entity, Prop_Data, "m_iPointIndex");
+
+	if(cpIndex < sizeof(controlPoints))
+		controlPoints[cpIndex] = EntIndexToEntRef(entity);
+}
+
+public void OnRoundTimerSpawned(int entity)
+{
+	if(Is5Cp()
+	&& GetEntProp(entity, Prop_Send, "m_bShowInHUD")
+	&& !GetEntProp(entity, Prop_Send, "m_bStopWatchTimer"))
 	{
-		int cpDiff = GetNumTeamOwnedCps(2) - GetNumTeamOwnedCps(3);
-		
+		roundTimerEntity = EntIndexToEntRef(entity);
+
+		SetRoundTimeLimit();
+	}
+}
+
+
+public SetRoundTimeLimit()
+{
+	if(EntRefToEntIndex(roundTimerEntity) == INVALID_ENT_REFERENCE)
+		return;
+
+	SetVariantInt(GetConVarInt(roundTimeLimitCvar));
+	AcceptEntityInput(roundTimerEntity, "SetMaxTime");
+}
+
+
+public Action OnRoundTimerExpired(const char[] output, int caller, int activator, float delay)
+{
+	if(caller == EntRefToEntIndex(roundTimerEntity))
+	{
+		if(!AreCpsValid())
+			return Plugin_Continue;
+
+		int redOwned = GetNumTeamOwnedCps(2);
+		int bluOwned = GetNumTeamOwnedCps(3);
+
+		if(redOwned + bluOwned != 5)
+			return Plugin_Continue;
+
+		int cpDiff = redOwned - bluOwned;
+
 		if(cpDiff > 0)
 			CaptureNext(3);
 		else if(cpDiff < 0)
 			CaptureNext(2);
-	
+
 		if(cpDiff != 0)
 		{
 			AcceptEntityInput(caller, "Pause");
-			
+
 			// Can't resume timer straight away or it breaks timer OnFinished hook
 			CreateTimer(0.0, ResumeTimer);
-			
+
 			return Plugin_Handled;
 		}
 		else
@@ -115,8 +208,18 @@ public Action ResumeTimer(Handle timer)
 {
 	SetVariantInt(GetConVarInt(roundTimeLimitCvar));
 	AcceptEntityInput(roundTimerEntity, "SetTime");
-	
+
 	AcceptEntityInput(roundTimerEntity, "Resume");
+}
+
+
+public bool AreCpsValid()
+{
+	for(int i = 0; i < sizeof(controlPoints); ++i)
+		if(EntRefToEntIndex(controlPoints[i]) == INVALID_ENT_REFERENCE)
+			return false;
+
+	return true;
 }
 
 public int GetNumTeamOwnedCps(int team)
@@ -126,7 +229,7 @@ public int GetNumTeamOwnedCps(int team)
 	for(int i = 0; i < sizeof(controlPoints); ++i)
 		if(GetEntProp(controlPoints[i], Prop_Data, "m_iTeamNum") == team)
 			++count;
-	
+
 	return count;
 }
 
@@ -139,7 +242,7 @@ public bool CaptureNext(int team)
 			{
 				SetVariantInt(team);
 				AcceptEntityInput(controlPoints[i], "SetOwner", 0, 0);
-			
+
 				return true;
 			}
 	}
@@ -150,10 +253,10 @@ public bool CaptureNext(int team)
 			{
 				SetVariantInt(team);
 				AcceptEntityInput(controlPoints[i], "SetOwner", 0, 0);
-			
+
 				return true;
 			}
 	}
-		
+
 	return false;
 }
