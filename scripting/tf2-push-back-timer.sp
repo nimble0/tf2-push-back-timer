@@ -2,6 +2,7 @@
 #include <sdktools>
 #include <sdkhooks>
 #include <tf2>
+#include <tf2_stocks>
 
 
 public Plugin myinfo =
@@ -25,6 +26,12 @@ int controlPoints[] =
 	INVALID_ENT_REFERENCE
 };
 
+int fakeClients[] =
+{
+	INVALID_ENT_REFERENCE,
+	INVALID_ENT_REFERENCE
+};
+
 
 public void OnPluginStart()
 {
@@ -40,6 +47,13 @@ public void OnPluginStart()
 	HookEntityOutput("team_round_timer", "OnFinished", OnRoundTimerExpired);
 }
 
+public void OnPluginEnd()
+{
+	for(int i = 0; i < sizeof(fakeClients); ++i)
+		KickClient(EntRefToEntIndex(fakeClients[i]));
+}
+
+
 public OnRoundTimeLimitChanged(Handle cvar, const char[] oldValue, const char[] newValue)
 {
 	SetRoundTimeLimit();
@@ -49,12 +63,12 @@ public OnRoundTimeLimitChanged(Handle cvar, const char[] oldValue, const char[] 
 public void OnMapStart()
 {
 	// Reset map specific data
-	is5Cp = -1;
+	is5Cp = Is5Cp();
 	roundTimerEntity = INVALID_ENT_REFERENCE;
 	for(int i = 0; i < sizeof(controlPoints); ++i)
 		controlPoints[i] = INVALID_ENT_REFERENCE;
 
-	if(Is5Cp())
+	if(is5Cp)
 	{
 		int entity = INVALID_ENT_REFERENCE;
 
@@ -79,21 +93,28 @@ public void OnMapStart()
 			if(cpIndex < sizeof(controlPoints))
 				controlPoints[cpIndex] = entity;
 		}
+
+
+		CreateTimer(0.0, CreateFakeClients);
+	}
+}
+
+public Action CreateFakeClients(Handle timer)
+{
+	fakeClients[0] = EntIndexToEntRef(CreateFakeClient("RED"));
+	fakeClients[1] = EntIndexToEntRef(CreateFakeClient("BLU"));
+
+	for(int i = 0; i < sizeof(fakeClients); ++i)
+	{
+		int entityIndex = EntRefToEntIndex(fakeClients[i]);
+
+		ChangeClientTeam(entityIndex, i+2);
+		TF2_SetPlayerClass(entityIndex, TF2_GetClass("scout"));
+		TF2_RespawnPlayer(entityIndex);
 	}
 }
 
 public bool Is5Cp()
-{
-	if(is5Cp == -1)
-		is5Cp = Is5Cp_();
-
-	if(is5Cp == 0)
-		return false;
-	else
-		return true;
-}
-
-public bool Is5Cp_()
 {
 	if(GameRules_GetProp("m_nGameType") != 2
 	|| GameRules_GetProp("m_bIsInTraining")
@@ -147,7 +168,7 @@ public Action OnCpSpawned_(Handle timer, int entity)
 
 public void OnRoundTimerSpawned(int entity)
 {
-	if(Is5Cp()
+	if(is5Cp
 	&& GetEntProp(entity, Prop_Send, "m_bShowInHUD")
 	&& !GetEntProp(entity, Prop_Send, "m_bStopWatchTimer"))
 	{
@@ -189,27 +210,12 @@ public Action OnRoundTimerExpired(const char[] output, int caller, int activator
 			CaptureNext(2);
 
 		if(cpDiff != 0)
-		{
-			AcceptEntityInput(caller, "Pause");
-
-			// Can't resume timer straight away or it breaks timer OnFinished hook
-			CreateTimer(0.0, ResumeTimer);
-
 			return Plugin_Handled;
-		}
 		else
 			return Plugin_Continue;
 	}
 
 	return Plugin_Continue;
-}
-
-public Action ResumeTimer(Handle timer)
-{
-	SetVariantInt(GetConVarInt(roundTimeLimitCvar));
-	AcceptEntityInput(roundTimerEntity, "SetTime");
-
-	AcceptEntityInput(roundTimerEntity, "Resume");
 }
 
 
@@ -239,23 +245,39 @@ public bool CaptureNext(int team)
 	{
 		for(int i = 0; i < sizeof(controlPoints); ++i)
 			if(GetEntProp(controlPoints[i], Prop_Data, "m_iTeamNum") != team)
-			{
-				SetVariantInt(team);
-				AcceptEntityInput(controlPoints[i], "SetOwner", 0, 0);
-
-				return true;
-			}
+				return Capture(controlPoints[i], team);
 	}
 	else if(GetEntProp(controlPoints[sizeof(controlPoints)-1], Prop_Data, "m_iTeamNum") == team)
 	{
 		for(int i = sizeof(controlPoints)-1; i > -1; --i)
 			if(GetEntProp(controlPoints[i], Prop_Data, "m_iTeamNum") != team)
-			{
-				SetVariantInt(team);
-				AcceptEntityInput(controlPoints[i], "SetOwner", 0, 0);
+				return Capture(controlPoints[i], team);
+	}
 
-				return true;
-			}
+	return false;
+}
+
+public bool Capture(int cp, int team)
+{
+	char cpName[50];
+	GetEntPropString(cp, Prop_Data, "m_iName", cpName, sizeof(cpName));
+
+	int entity = INVALID_ENT_REFERENCE;
+	while((entity = FindEntityByClassname(entity, "trigger_capture_area")) != INVALID_ENT_REFERENCE)
+	{
+		char cpRefName[50];
+		GetEntPropString(entity, Prop_Data, "m_iszCapPointName", cpRefName, sizeof(cpRefName));
+
+		if(StrEqual(cpName, cpRefName))
+		{
+			int fakeClient = fakeClients[team-2];
+
+			AcceptEntityInput(entity, "StartTouch", 0, fakeClient);
+			AcceptEntityInput(entity, "CaptureCurrentCP", 0, 0);
+			AcceptEntityInput(entity, "EndTouch", 0, fakeClient);
+
+			return true;
+		}
 	}
 
 	return false;
