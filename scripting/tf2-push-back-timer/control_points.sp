@@ -10,7 +10,47 @@ public Action OnCpSpawned_(Handle timer, int entity)
 
 	if(cpIndex < sizeof(controlPoints))
 		controlPoints[cpIndex] = EntIndexToEntRef(entity);
+
+	return Plugin_Continue;
 }
+
+public Action OnCaptureStarted(Event event, const char[] name, bool dontBroadcast)
+{
+	int cpIndex = event.GetInt("cp");
+
+	if(cpIndex < 5)
+		controlPointStates[cpIndex] = true;
+
+	return Plugin_Continue;
+}
+
+public Action OnCaptureBroken(Event event, const char[] name, bool dontBroadcast)
+{
+	int cpIndex = event.GetInt("cp");
+
+	if(cpIndex < 5)
+	{
+		controlPointStates[cpIndex] = false;
+
+		TryPushBackCapture();
+	}
+
+	return Plugin_Continue;
+}
+
+public Action OnCaptureCompleted(Event event, const char[] name, bool dontBroadcast)
+{
+	int cpIndex = event.GetInt("cp");
+
+	if(cpIndex < 5)
+		controlPointStates[cpIndex] = false;
+
+	pushBackTeam = -1;
+	pushBackCp = -1;
+
+	return Plugin_Continue;
+}
+
 
 public bool Is5Cp()
 {
@@ -61,28 +101,43 @@ public int GetNumTeamOwnedCps(int team)
 	return count;
 }
 
-public bool CaptureNext(int team)
+public void TryPushBackCapture()
+{
+	if(pushBackTeam == -1 || pushBackCp == -1)
+		return;
+
+	for(int i = 0; i < sizeof(controlPointStates); ++i)
+		if(i != pushBackCp && controlPointStates[i])
+			return;
+
+	Capture(pushBackCp, pushBackTeam);
+
+	pushBackTeam = -1;
+	pushBackCp = -1;
+}
+
+public int GetNextCapture(int team)
 {
 	if(GetEntProp(controlPoints[0], Prop_Data, "m_iTeamNum") == team)
 	{
 		for(int i = 0; i < sizeof(controlPoints); ++i)
 			if(GetEntProp(controlPoints[i], Prop_Data, "m_iTeamNum") != team)
-				return Capture(controlPoints[i], team);
+				return i;
 	}
 	else if(GetEntProp(controlPoints[sizeof(controlPoints)-1], Prop_Data, "m_iTeamNum") == team)
 	{
 		for(int i = sizeof(controlPoints)-1; i > -1; --i)
 			if(GetEntProp(controlPoints[i], Prop_Data, "m_iTeamNum") != team)
-				return Capture(controlPoints[i], team);
+				return i;
 	}
 
-	return false;
+	return -1;
 }
 
 public bool Capture(int cp, int team)
 {
 	char cpName[50];
-	GetEntPropString(cp, Prop_Data, "m_iName", cpName, sizeof(cpName));
+	GetEntPropString(controlPoints[cp], Prop_Data, "m_iName", cpName, sizeof(cpName));
 
 	int entity = INVALID_ENT_REFERENCE;
 	while((entity = FindEntityByClassname(entity, "trigger_capture_area")) != INVALID_ENT_REFERENCE)

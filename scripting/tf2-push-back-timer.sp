@@ -14,9 +14,11 @@ public Plugin myinfo =
 	url = "https://github.com/nimble0/tf2-push-back-timer"
 };
 
-int is5Cp = -1;
+
 Handle roundTimeLimitCvar = INVALID_HANDLE;
 int roundTimerEntity = INVALID_ENT_REFERENCE;
+
+int is5Cp = -1;
 int controlPoints[] =
 {
 	INVALID_ENT_REFERENCE,
@@ -25,7 +27,19 @@ int controlPoints[] =
 	INVALID_ENT_REFERENCE,
 	INVALID_ENT_REFERENCE
 };
-
+// false - Not being captured
+// true - Being captured
+bool controlPointStates[] =
+{
+	false,
+	false,
+	false,
+	false,
+	false
+};
+int pushBackTeam = -1;
+int pushBackCp = -1;
+Handle pushBackSecondaryTimer = INVALID_HANDLE;
 int fakeClients[] =
 {
 	INVALID_ENT_REFERENCE,

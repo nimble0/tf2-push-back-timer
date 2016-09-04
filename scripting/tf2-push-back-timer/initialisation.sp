@@ -9,7 +9,12 @@
 		1.0);
 	HookConVarChange(roundTimeLimitCvar, OnRoundTimeLimitChanged);
 
+	HookEntityOutput("team_round_timer", "On1SecRemain", OnRoundTimerAlmostExpired);
 	HookEntityOutput("team_round_timer", "OnFinished", OnRoundTimerExpired);
+
+	HookEvent("teamplay_point_startcapture", OnCaptureStarted, EventHookMode_Post);
+	HookEvent("teamplay_capture_broken", OnCaptureBroken, EventHookMode_Post);
+	HookEvent("teamplay_point_captured", OnCaptureCompleted, EventHookMode_Post);
 }
 
 public void OnMapStart()
@@ -19,6 +24,8 @@ public void OnMapStart()
 	roundTimerEntity = INVALID_ENT_REFERENCE;
 	for(int i = 0; i < sizeof(controlPoints); ++i)
 		controlPoints[i] = INVALID_ENT_REFERENCE;
+	for(int i = 0; i < sizeof(controlPointStates); ++i)
+		controlPointStates[i] = false;
 
 	if(is5Cp)
 	{
