@@ -39,7 +39,6 @@ bool controlPointStates[] =
 };
 int pushBackTeam = -1;
 int pushBackCp = -1;
-Handle pushBackSecondaryTimer = INVALID_HANDLE;
 int fakeClients[] =
 {
 	INVALID_ENT_REFERENCE,

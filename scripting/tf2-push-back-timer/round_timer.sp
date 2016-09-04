@@ -26,14 +26,19 @@ public void OnRoundTimeLimitChanged(Handle cvar, const char[] oldValue, const ch
 	SetRoundTimeLimit();
 }
 
-public Action OnRoundTimerExpired(const char[] output, int caller, int activator, float delay)
+public Action OnActualRoundTimerExpired(const char[] output, int caller, int activator, float delay)
 {
 	if(caller == EntRefToEntIndex(roundTimerEntity))
 	{
-		CloseHandle(pushBackSecondaryTimer);
-		pushBackSecondaryTimer = INVALID_HANDLE;
+		// Use normal timer behaviour if we couldn't find all 5 control points
+		if(!AreCpsValid())
+			return Plugin_Continue;
 
-		return OnRoundTimerExpired_();
+		// Use normal timer behaviour if not all control points are owned
+		if(GetNumTeamOwnedCps(2) + GetNumTeamOwnedCps(3) != 5)
+			return Plugin_Continue;
+
+		return Plugin_Handled;
 	}
 
 	return Plugin_Continue;
@@ -42,25 +47,13 @@ public Action OnRoundTimerExpired(const char[] output, int caller, int activator
 public Action OnRoundTimerAlmostExpired(const char[] output, int caller, int activator, float delay)
 {
 	if(caller == EntRefToEntIndex(roundTimerEntity))
-		pushBackSecondaryTimer = CreateTimer(1.0, OnRoundTimerExpiredB);
+		CreateTimer(1.0, OnRoundTimerExpired);
 
 	return Plugin_Continue;
 }
 
-public Action OnRoundTimerExpiredB(Handle timer)
+public Action OnRoundTimerExpired(Handle timer)
 {
-	OnRoundTimerExpired_();
-	pushBackSecondaryTimer = INVALID_HANDLE;
-
-	return Plugin_Continue;
-}
-
-public Action OnRoundTimerExpired_()
-{
-	if(pushBackTeam != -1
-	|| !AreCpsValid())
-		return Plugin_Continue;
-
 	int redOwned = GetNumTeamOwnedCps(2);
 	int bluOwned = GetNumTeamOwnedCps(3);
 
@@ -78,8 +71,5 @@ public Action OnRoundTimerExpired_()
 
 	TryPushBackCapture();
 
-	if(cpDiff != 0)
-		return Plugin_Handled;
-	else
-		return Plugin_Continue;
+	return Plugin_Continue;
 }

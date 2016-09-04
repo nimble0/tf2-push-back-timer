@@ -9,9 +9,11 @@
 		1.0);
 	HookConVarChange(roundTimeLimitCvar, OnRoundTimeLimitChanged);
 
-	HookEntityOutput("team_round_timer", "On1SecRemain", OnRoundTimerAlmostExpired);
-	HookEntityOutput("team_round_timer", "OnFinished", OnRoundTimerExpired);
+	// For preventing stalemate round end
+	HookEntityOutput("team_round_timer", "OnFinished", OnActualRoundTimerExpired);
 
+	// For creating correct overtime conditions
+	HookEntityOutput("team_round_timer", "On1SecRemain", OnRoundTimerAlmostExpired);
 	HookEvent("teamplay_point_startcapture", OnCaptureStarted, EventHookMode_Post);
 	HookEvent("teamplay_capture_broken", OnCaptureBroken, EventHookMode_Post);
 	HookEvent("teamplay_point_captured", OnCaptureCompleted, EventHookMode_Post);
