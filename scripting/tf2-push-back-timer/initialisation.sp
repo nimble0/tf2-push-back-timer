@@ -9,11 +9,7 @@
 		1.0);
 	HookConVarChange(roundTimeLimitCvar, OnRoundTimeLimitChanged);
 
-	// For preventing stalemate round end
-	HookEntityOutput("team_round_timer", "OnFinished", OnActualRoundTimerExpired);
-
 	// For creating correct overtime conditions
-	HookEntityOutput("team_round_timer", "On1SecRemain", OnRoundTimerAlmostExpired);
 	HookEvent("teamplay_point_startcapture", OnCaptureStarted, EventHookMode_Post);
 	HookEvent("teamplay_capture_broken", OnCaptureBroken, EventHookMode_Post);
 	HookEvent("teamplay_point_captured", OnCaptureCompleted, EventHookMode_Post);
@@ -28,7 +24,6 @@ public void OnMapStart()
 {
 	// Reset map specific data
 	is5Cp = Is5Cp();
-	roundTimerEntity = INVALID_ENT_REFERENCE;
 	for(int i = 0; i < sizeof(controlPoints); ++i)
 		controlPoints[i] = INVALID_ENT_REFERENCE;
 	for(int i = 0; i < sizeof(controlPointStates); ++i)
@@ -41,10 +36,7 @@ public void OnMapStart()
 		while((entity = FindEntityByClassname(entity, "team_round_timer")) != INVALID_ENT_REFERENCE)
 			if(GetEntProp(entity, Prop_Send, "m_bShowInHUD")
 			&& !GetEntProp(entity, Prop_Send, "m_bStopWatchTimer"))
-				roundTimerEntity = EntIndexToEntRef(entity);
-
-		SetRoundTimeLimit();
-
+				HookRoundTimer(entity);
 
 		while((entity = FindEntityByClassname(entity, "team_control_point")) != INVALID_ENT_REFERENCE)
 		{
@@ -110,6 +102,9 @@ public Action OnPlayerSpawn(Handle event, const char[] name, bool dontBroadcast)
 			SDKHook(client, SDKHook_SetTransmit, OnSetTransmit);
 			SetEntProp(client, Prop_Send, "m_CollisionGroup", 2);
 			SetEntProp(client, Prop_Data, "m_takedamage", 0, 1);
+			
+			float pos[] = {10000.0, 10000.0, 10000.0};
+			TeleportEntity(client, pos, NULL_VECTOR, NULL_VECTOR);
 		}
 
 	return Plugin_Continue;
